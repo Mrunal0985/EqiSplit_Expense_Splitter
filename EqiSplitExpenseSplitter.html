@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EqiSplit Expense Splitter</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f4f4f4;
+      margin: 20px;
+      text-align: center;
+    }
+    h1, h2, h3 {
+      color: #333;
+    }
+    #mainPage, #groupPage {
+      background-color: #fff;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      margin: auto;
+      max-width: 600px;
+    }
+    button, input, select {
+      padding: 10px;
+      margin: 5px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      font-size: 14px;
+    }
+    button:hover {
+      cursor: pointer;
+      background-color: #ddd;
+    }
+    ul {
+      list-style-type: none;
+      padding: 0;
+    }
+    li {
+      margin-bottom: 10px;
+    }
+    .remove-button, .settle-button {
+      background-color: #ff6666;
+      color: #fff;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 5px;
+      font-size: 12px;
+    }
+    .settle-button:disabled {
+      background-color: #dddddd;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+
+<h1>EqiSplit Expense Group</h1>
+
+<div id="mainPage">
+  <button onclick="createGroup()">Create New Expense Group</button>
+</div>
+<div>
+  <label for="existingGroups">Select Existing Group:</label>
+  <select id="existingGroups"></select>
+  <button onclick="openExistingGroup()">Open Group</button>
+</div>
+
+<style>
+    .footer {
+      position: fixed;
+      left: 0;
+      bottom: 0;
+      width: 100%;
+      height: 45px;
+      background-color: rgb(2, 4, 128);
+      color: white;
+      text-align: center;
+    }
+    </style>
+    
+    <div class="footer">
+      <p>Created by Mrunal Dhoble</p>
+    </div>
+
+
+
+<div id="groupPage" style="display:none;">
+  <h2>Expense Group</h2>
+
+  <div>
+    <button onclick="goToMainPage()">Go Back</button>
+  </div>
+
+  <div>
+    <label for="memberName">Member Name:</label>
+    <input type="text" id="memberName">
+    <button onclick="addMember()">Add Member</button>
+  </div>
+
+  <div>
+    <h3>Members:</h3>
+    <ul id="membersList"></ul>
+  </div>
+
+  <div>
+    <h3>Payers:</h3>
+    <ul id="payersList"></ul>
+  </div>
+
+  <div>
+    <label for="totalAmount">Total Amount:</label>
+    <input type="number" id="totalAmount">
+    <button onclick="splitExpense()">Split Expense Equally</button>
+  </div>
+
+  <div>
+    <h3>Owed Amounts:</h3>
+    <ul id="owedList"></ul>
+  </div>
+
+  <button onclick="deleteGroup()">Delete Group</button>
+</div>
+
+<script>
+  let currentGroup = null;
+  let members = [];
+  let payerMapping = {}; // Dictionary to store payer for each member
+  let totalAmount = 0;
+  let owedAmounts = {};
+
+  function createGroup() {
+    const groupName = prompt("Enter group name:");
+    if (groupName) {
+      currentGroup = groupName;
+      saveCurrentGroup();
+      showGroupPage();
+      loadGroupData();
+      updateMembersList();
+      updatePayersList();
+      updateOwedList();
+    }
+  }
+
+  function openExistingGroup() {
+    const selectedGroup = document.getElementById('existingGroups').value;
+    if (selectedGroup) {
+      currentGroup = selectedGroup;
+      showGroupPage();
+      loadGroupData();
+      updateMembersList();
+      updatePayersList();
+      updateOwedList();
+    }
+  }
+
+  function showGroupPage() {
+    document.getElementById('mainPage').style.display = 'none';
+    document.getElementById('groupPage').style.display = 'block';
+  }
+
+  function goToMainPage() {
+    document.getElementById('mainPage').style.display = 'block';
+    document.getElementById('groupPage').style.display = 'none';
+    loadGroupData(); // Load data when going back to the main page
+  }
+
+  function addMember() {
+    const memberNameInput = document.getElementById('memberName');
+    const memberName = memberNameInput.value.trim();
+
+    if (memberName !== '' && !members.includes(memberName)) {
+      members.push(memberName);
+      saveMembers();
+      updateMembersList();
+      memberNameInput.value = '';
+    }
+  }
+
+  function updateMembersList() {
+    const membersList = document.getElementById('membersList');
+    membersList.innerHTML = '';
+
+    members.forEach(member => {
+      const listItem = document.createElement('li');
+      listItem.textContent = member;
+      
+      const removeButton = document.createElement('button');
+      removeButton.textContent = 'Remove';
+      removeButton.className = 'remove-button';
+      removeButton.onclick = function() { removeMember(member); };
+      
+      listItem.appendChild(removeButton);
+      membersList.appendChild(listItem);
+    });
+  }
+
+  function removeMember(member) {
+    const index = members.indexOf(member);
+    if (index !== -1) {
+      members.splice(index, 1);
+      delete payerMapping[member]; // Remove payer mapping when a member is removed
+      saveMembers();
+      updateMembersList();
+      updatePayersList();
+    }
+  }
+
+  function updatePayersList() {
+    const payersList = document.getElementById('payersList');
+    payersList.innerHTML = '';
+
+    members.forEach(member => {
+      const listItem = document.createElement('li');
+      listItem.textContent = `${member}: ${payerMapping[member] || 'Not set'}`;
+
+      const setPayerButton = document.createElement('button');
+      setPayerButton.textContent = 'Set Payer';
+      setPayerButton.className = 'settle-button';
+      setPayerButton.onclick = function() { setPayer(member); };
+
+      listItem.appendChild(setPayerButton);
+      payersList.appendChild(listItem);
+    });
+  }
+
+  function setPayer(member) {
+    const payer = prompt(`Enter payer for ${member}:`);
+    if (payer && members.includes(payer)) {
+      payerMapping[member] = payer;
+      savePayers();
+      updatePayersList();
+      updateOwedList();
+    } else {
+      alert('Invalid payer or payer not in the group.');
+    }
+  }
+
+  function splitExpense() {
+    const totalAmountInput = document.getElementById('totalAmount');
+    totalAmount = parseFloat(totalAmountInput.value);
+
+    if (!isNaN(totalAmount) && members.length > 0) {
+      saveTotalAmount();
+      calculateOwedAmounts();
+      updateOwedList();
+    } else {
+      alert('Invalid total amount or no members added.');
+    }
+  }
+
+  function calculateOwedAmounts() {
+    owedAmounts = {};
+
+    members.forEach(member => {
+      const payer = payerMapping[member];
+      if (payer && member !== payer) {
+        if (!owedAmounts[`${payer}-${member}`]) {
+          owedAmounts[`${payer}-${member}`] = 0;
+        }
+        owedAmounts[`${payer}-${member}`] += totalAmount / members.length;
+      }
+    });
+  }
+
+  function updateOwedList() {
+    const owedList = document.getElementById('owedList');
+    owedList.innerHTML = '';
+
+    for (const key in owedAmounts) {
+      const [payer, member] = key.split('-');
+      const listItem = document.createElement('li');
+      listItem.textContent = `${payer} paid for ${member}: $${owedAmounts[key].toFixed(2)}`;
+
+      const settleButton = document.createElement('button');
+      settleButton.textContent = 'Settle';
+      settleButton.className = 'settle-button';
+      settleButton.onclick = function() { settleOwedAmount(key, settleButton); };
+      
+      listItem.appendChild(settleButton);
+      owedList.appendChild(listItem);
+    }
+  }
+
+  function settleOwedAmount(key, settleButton) {
+    owedAmounts[key] = 0;
+    saveTotalAmount();
+    saveMembers();
+    updateMembersList();
+    updatePayersList();
+    updateOwedList();
+
+    // Disable the settle button after settling
+    settleButton.disabled = true;
+
+    // Display a settlement message
+    const [payer, member] = key.split('-');
+    alert(`${payer} cleared the dues for ${member}!`);
+  }
+
+  function deleteGroup() {
+    const confirmDelete = confirm('Are you sure you want to delete this group?');
+    if (confirmDelete) {
+      localStorage.removeItem(`${currentGroup}_members`);
+      localStorage.removeItem(`${currentGroup}_payers`);
+      localStorage.removeItem(`${currentGroup}_totalAmount`);
+      currentGroup = null;
+      goToMainPage();
+    }
+  }
+
+  function loadGroupData() {
+    members = JSON.parse(localStorage.getItem(`${currentGroup}_members`)) || [];
+    payerMapping = JSON.parse(localStorage.getItem(`${currentGroup}_payers`)) || {};
+    totalAmount = parseFloat(localStorage.getItem(`${currentGroup}_totalAmount`)) || 0;
+  }
+
+  function saveMembers() {
+    localStorage.setItem(`${currentGroup}_members`, JSON.stringify(members));
+  }
+
+  function savePayers() {
+    localStorage.setItem(`${currentGroup}_payers`, JSON.stringify(payerMapping));
+  }
+
+  function saveTotalAmount() {
+    localStorage.setItem(`${currentGroup}_totalAmount`, totalAmount);
+  }
+
+  function saveCurrentGroup() {
+    localStorage.setItem('currentGroup', currentGroup);
+  }
+
+  function loadCurrentGroup() {
+    currentGroup = localStorage.getItem('currentGroup') || null;
+  }
+
+  function loadExistingGroups() {
+    const existingGroupsSelect = document.getElementById('existingGroups');
+    existingGroupsSelect.innerHTML = '';
+
+    let existingGroups = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key.endsWith('_members')) {
+        const groupName = key.replace('_members', '');
+        existingGroups.push(groupName);
+      }
+    }
+
+    existingGroups.sort(); // Sort the group names alphabetically
+
+    existingGroups.forEach(groupName => {
+      const option = document.createElement('option');
+      option.value = groupName;
+      option.textContent = groupName;
+      existingGroupsSelect.appendChild(option);
+    });
+  }
+
+  // Load existing groups and current group on page load
+  loadExistingGroups();
+  loadCurrentGroup();
+</script>
+
+</body>
+</html>
